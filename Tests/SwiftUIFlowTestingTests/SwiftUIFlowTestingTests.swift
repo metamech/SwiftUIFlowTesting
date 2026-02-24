@@ -1,6 +1,2 @@
-import Testing
-@testable import SwiftUIFlowTesting
-
-@Test func example() async throws {
-    // Write your test here and use APIs like `#expect(...)` to check expected conditions.
-}
+// Tests are organized by type in individual test files:
+//   FlowStepTests.swift, FlowConfigurationTests.swift, FlowTesterTests.swift
