@@ -28,12 +28,12 @@ swift-format .       # apply formatting
 
 | Type | Role |
 |------|------|
-| `FlowModel` | Protocol — marker for models that drive a SwiftUI screen/flow |
-| `FlowViewFactory` | Protocol — builds a SwiftUI view for a given model |
-| `ClosureFlowViewFactory` | Struct — closure-based `FlowViewFactory` convenience |
+| `FlowModel` | Protocol — `AnyObject & Observable` marker for testable models |
+| `FlowAssertion` | Struct — labeled assertion closure for diagnostics |
 | `FlowStep` | Struct — one step in a flow (name, action, assertions) |
-| `FlowConfiguration` | Struct — environment/snapshot config for a test run |
-| `FlowTester` | Class — central runner: model + factory + steps → run |
+| `FlowStepResult` | Struct — per-step result returned from `run()` |
+| `FlowConfiguration` | Struct — environment patching config for a test run |
+| `FlowTester` | Class — `@MainActor` runner: model + `@ViewBuilder` + steps → run |
 
 ## Package Boundary Rules
 
