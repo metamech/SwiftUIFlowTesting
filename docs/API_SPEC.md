@@ -27,9 +27,9 @@ Actions are synchronous `@MainActor (Model) -> Void`. Rationale:
 - Flow testing exercises the model's intent methods (`model.proceedToPayment()`), which
   are synchronous state mutations. The model owns async work internally; tests should
   not need to await it during the step action.
-- If a consumer needs async setup between steps, they do so before calling the next
-  step or use `run(setup:)` with an async preamble. Keeping the core synchronous avoids
-  forcing `async` on every test and keeps the runner simple.
+- If a consumer needs async setup between steps, they do so before constructing the
+  tester or between separate tester runs. Keeping the core synchronous avoids forcing
+  `async` on every test and keeps the runner simple.
 - If future demand warrants it, an `asyncStep` variant can be added without breaking
   the synchronous API.
 
@@ -65,11 +65,10 @@ is a SwiftUI type used during view construction. The closure is
 
 ### 6. AnyView type erasure in run(snapshot:)
 
-The snapshot closure receives `some View` via a generic helper rather than `AnyView`.
-Specifically, the runner wraps the factory output in an internal
-`EnvironmentPatchView<Content>` and passes that concrete type erased through
-`AnyView` only at the boundary where it enters the snapshot closure. This is
-acceptable because:
+The snapshot closure receives `AnyView`. The runner builds the concrete view via
+the `viewBuilder` closure, applies environment patches with
+`content.environment(\.self, env)`, then wraps the result in `AnyView` before
+passing it to the snapshot closure. This is acceptable because:
 
 - The snapshot closure is provided by the consumer (e.g., wrapping
   `assertSnapshot`), which already accepts `AnyView` or `any View`.
@@ -109,8 +108,8 @@ The builder pattern (methods returning `Self`) is retained. Rationale:
   the consumer controls it via the snapshot closure or SnapshotTesting's own
   `isRecording` flag).
 - Added `stepCount` and `stepNames` read-only properties for introspection.
-- `run` returns `[FlowStepResult]` so the caller can inspect timing or per-step
-  metadata after execution.
+- `run` returns `[FlowStepResult]` (step name + index) for post-run inspection
+  (e.g., logging executed steps in CI output).
 
 ---
 
@@ -383,16 +382,18 @@ public final class FlowTester<Model: FlowModel, Content: View> {
     /// Adds a step with an action and a single assertion closure.
     ///
     /// Convenience overload for the common case of one assertion per step.
+    /// The `action` parameter has no default to avoid ambiguity with the
+    /// action-only overload — both `action:` and `assert:` must be provided.
     ///
     /// - Parameters:
     ///   - name: Identifier for the step.
-    ///   - action: Closure that mutates the model. Defaults to no-op.
+    ///   - action: Closure that mutates the model (required, no default).
     ///   - assert: A single assertion closure.
     /// - Returns: `self` for chaining.
     @discardableResult
     public func step(
         _ name: String,
-        action: @escaping @MainActor @Sendable (Model) -> Void = { _ in },
+        action: @escaping @MainActor @Sendable (Model) -> Void,
         assert: @escaping @MainActor @Sendable (Model) -> Void
     ) -> Self {
         steps.append(
@@ -588,6 +589,7 @@ struct CheckoutView: View {
 ```
 Sources/
   SwiftUIFlowTesting/
+    SwiftUIFlowTesting.swift   -- Module-level comment (no public API)
     FlowModel.swift            -- FlowModel protocol
     FlowAssertion.swift        -- FlowAssertion<Model>
     FlowStep.swift             -- FlowStep<Model>
@@ -596,9 +598,10 @@ Sources/
     FlowTester.swift           -- FlowTester<Model, Content>
 Tests/
   SwiftUIFlowTestingTests/
-    FlowStepTests.swift        -- FlowStep construction, Sendable
+    TestHelpers.swift           -- MockModel, MockView (test-only)
+    FlowStepTests.swift         -- FlowStep construction, assertions
     FlowConfigurationTests.swift
-    FlowTesterTests.swift      -- Step building, run execution, results
+    FlowTesterTests.swift       -- Step building, run execution, results
 ```
 
 ---
@@ -613,3 +616,125 @@ Tests/
 | `FlowStepResult`    | Struct     | Yes      | --         | --                        |
 | `FlowConfiguration` | Struct     | Yes      | --         | --                        |
 | `FlowTester`        | Class      | No       | @MainActor | `<Model: FlowModel, Content: View>` |
+
+---
+
+## Quick Reference Template
+
+Minimal copy-paste-ready flow test for AI agents generating test code:
+
+```swift
+import SwiftUI
+import Testing
+import SwiftUIFlowTesting
+// import SnapshotTesting        // only if using snapshots
+// @testable import MyApp        // only if accessing internal types
+
+@Suite @MainActor
+struct MyFlowTests {
+    @Test func myFlow() {
+        let model = MyModel()
+
+        FlowTester(model: model) { m in MyView(model: m) }
+            .step("initial") { _ in }
+            .step("after-action", action: { $0.doSomething() }, assert: { m in
+                #expect(m.state == .expected)
+            })
+            .run { name, view in
+                // Snapshot hook — consumers provide their own strategy:
+                // assertSnapshot(of: view, as: .image, named: name)
+            }
+    }
+}
+```
+
+---
+
+## Common Pitfalls
+
+### Overload disambiguation
+
+`FlowTester` has two `step` overloads:
+
+1. **Action-only**: `step(_ name:, action:, assertions:)` — `action` defaults to
+   no-op, `assertions` defaults to empty.
+2. **Action + single assert**: `step(_ name:, action:, assert:)` — `action` has
+   **no default** to avoid ambiguity with overload 1.
+
+A bare trailing closure always resolves to the action-only overload:
+
+```swift
+// This is an ACTION closure, not an assertion:
+.step("idle") { _ in }
+
+// To use the assert: convenience, BOTH closures must be provided:
+.step("advance", action: { $0.doSomething() }, assert: { m in
+    #expect(m.state == .expected)
+})
+
+// Multi-trailing-closure syntax also works:
+.step("advance") { $0.doSomething() } assert: { m in
+    #expect(m.state == .expected)
+}
+```
+
+### @MainActor required on all tests
+
+`FlowTester` is `@MainActor`-isolated. Every test function or suite that uses
+`FlowTester` **must** be annotated `@MainActor`:
+
+```swift
+// Correct — annotate the suite:
+@Suite @MainActor struct MyTests { ... }
+
+// Or annotate individual tests:
+@Test @MainActor func myTest() { ... }
+
+// WRONG — will produce concurrency errors:
+@Test func myTest() { ... }
+```
+
+### Assertion failure behavior
+
+Assertions run via `#expect` (Swift Testing) are **soft failures** — a failing
+assertion records the failure but does **not** halt the flow. All remaining steps
+and assertions continue to execute. Use `#require` if a step's assertion is a
+precondition for subsequent steps:
+
+```swift
+.step("login", action: { $0.login() }, assert: { m in
+    // Hard failure — stops the test if login failed,
+    // preventing confusing cascading failures in later steps.
+    try #require(m.isLoggedIn)
+})
+```
+
+When using `#require`, the test function must be marked `throws`:
+
+```swift
+@Test @MainActor func loginFlow() throws { ... }
+```
+
+### Step naming conventions
+
+Step names become snapshot identifiers (file names in SnapshotTesting). Use
+kebab-case, lowercase, descriptive of **state** not action:
+
+```swift
+// Good — describes the resulting state:
+.step("cart-empty") { _ in }
+.step("cart-with-items") { $0.addItem(.fixture) }
+.step("payment-form") { $0.proceedToPayment() }
+
+// Avoid — describes the action, not the state:
+.step("tap proceed button") { ... }
+.step("addItem") { ... }
+```
+
+### Required imports by scenario
+
+| Scenario | Imports needed |
+|----------|---------------|
+| Flow test without snapshots | `Testing`, `SwiftUIFlowTesting` |
+| Flow test with snapshots | `Testing`, `SwiftUI`, `SnapshotTesting`, `SwiftUIFlowTesting` |
+| Accessing app internals | Add `@testable import MyApp` |
