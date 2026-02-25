@@ -1,5 +1,5 @@
-import Testing
 import SwiftUI
+import Testing
 @testable import SwiftUIFlowTesting
 
 @Suite("FlowConfiguration")
@@ -11,6 +11,11 @@ struct FlowConfigurationTests {
         var env = EnvironmentValues()
         config.environmentPatch(&env)
         // Should not crash — no-op patch
+    }
+
+    @Test func defaultConfigurationHasEmptyLabel() {
+        let config = FlowConfiguration()
+        #expect(config.label == "")
     }
 
     @Test func customPatchAppliesColorScheme() {
@@ -31,5 +36,13 @@ struct FlowConfigurationTests {
         var env = EnvironmentValues()
         config.environmentPatch(&env)
         #expect(env.locale.identifier == "ja_JP")
+    }
+
+    @Test func labeledConfiguration() {
+        let config = FlowConfiguration(label: "dark") { env in
+            env.colorScheme = .dark
+        }
+
+        #expect(config.label == "dark")
     }
 }

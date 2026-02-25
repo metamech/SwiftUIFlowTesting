@@ -1,5 +1,5 @@
-import Testing
 import SwiftUI
+import Testing
 @testable import SwiftUIFlowTesting
 
 @Suite("FlowStep")
@@ -14,6 +14,7 @@ struct FlowStepTests {
 
         #expect(step.name == "test-step")
         #expect(step.assertions.isEmpty)
+        #expect(step.asyncAction == nil)
     }
 
     @Test func createsWithAssertions() {
@@ -23,7 +24,7 @@ struct FlowStepTests {
             assertions: [
                 FlowAssertion("check screen") { model in
                     #expect(model.screen == "initial")
-                },
+                }
             ]
         )
 
@@ -50,5 +51,17 @@ struct FlowStepTests {
         )
 
         #expect(step.assertions.isEmpty)
+    }
+
+    @Test func createsWithAsyncAction() {
+        let step = FlowStep<MockModel>(
+            name: "async-step",
+            action: { _ in },
+            asyncAction: { model in
+                model.advance(to: "loaded")
+            }
+        )
+
+        #expect(step.asyncAction != nil)
     }
 }
