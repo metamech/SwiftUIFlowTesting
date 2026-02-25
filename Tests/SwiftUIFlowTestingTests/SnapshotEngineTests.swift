@@ -247,6 +247,68 @@ struct SnapshotEngineTests {
         #expect(result.diffPath?.contains("diff-path.diff.png") == true)
     }
 
+    // MARK: - Observable Mutation Tests
+
+    @Test func observableMutationCapturedInSnapshot() {
+        let dir = makeTempDir()
+        let config = SnapshotConfiguration(record: true, snapshotDirectory: dir)
+        let engine = SnapshotEngine(
+            configuration: config,
+            filePath: #filePath,
+            function: #function
+        )
+        let model = MockModel()
+        model.screen = "initial"
+        _ = engine.capture(name: "observable-mutation", view: MockView(model: model))
+
+        // Mutate the model and render a fresh view
+        model.screen = "UPDATED"
+        let result = engine.capture(name: "observable-mutation-after", view: MockView(model: model))
+        guard case .newReference = result.status else {
+            Issue.record("Expected newReference, got \(result.status)")
+            return
+        }
+
+        // Now compare the two snapshots — they must differ
+        let refPath = URL(fileURLWithPath: dir)
+            .appendingPathComponent("observable-mutation.png")
+        let afterPath = URL(fileURLWithPath: dir)
+            .appendingPathComponent("observable-mutation-after.png")
+        let refData = try? Data(contentsOf: refPath)
+        let afterData = try? Data(contentsOf: afterPath)
+        #expect(refData != nil)
+        #expect(afterData != nil)
+        if let refData, let afterData {
+            #expect(refData != afterData, "Snapshot should capture updated state, not stale state")
+        }
+    }
+
+    @Test func observableMutationMatchesAfterRerender() {
+        let dir = makeTempDir()
+        let model = MockModel()
+        model.screen = "UPDATED"
+
+        let recordConfig = SnapshotConfiguration(record: true, snapshotDirectory: dir)
+        let recordEngine = SnapshotEngine(
+            configuration: recordConfig,
+            filePath: #filePath,
+            function: #function
+        )
+        _ = recordEngine.capture(name: "observable-rerender", view: MockView(model: model))
+
+        let compareConfig = SnapshotConfiguration(snapshotDirectory: dir)
+        let compareEngine = SnapshotEngine(
+            configuration: compareConfig,
+            filePath: #filePath,
+            function: #function
+        )
+        let result = compareEngine.capture(name: "observable-rerender", view: MockView(model: model))
+        guard case .matched = result.status else {
+            Issue.record("Expected matched after rerender, got \(result.status)")
+            return
+        }
+    }
+
     @Test func matchCleansDiffFile() {
         let dir = makeTempDir()
         let diffURL = URL(fileURLWithPath: dir)
