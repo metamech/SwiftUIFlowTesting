@@ -56,7 +56,7 @@ swift-format .       # apply formatting
 ## Workflow
 
 - **Branches**: `<type>/<slug>` (e.g., `feature/flow-tester`, `fix/sendable-conformance`)
-- **Quality gates**: `swift build` + `swift test` + `swiftlint` must pass before commit
+- **Quality gates**: `swift-format .` + `swift build` + `swift test` + `swiftlint` must pass before commit
 - **Test-first**: write failing test, implement, verify green
 - **No AI attribution** in commit messages
 
