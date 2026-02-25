@@ -39,14 +39,17 @@ let package = Package(
 
 ## Type Summary
 
-| Type | Kind | Sendable | Actor | Generic Parameters |
-|------|------|----------|-------|--------------------|
-| `FlowModel` | Protocol | -- | -- | -- |
-| `FlowAssertion` | Struct | Yes | -- | `<Model: FlowModel>` |
-| `FlowStep` | Struct | Yes | -- | `<Model: FlowModel>` |
-| `FlowStepResult` | Struct | Yes | -- | -- |
-| `FlowConfiguration` | Struct | Yes | -- | -- |
-| `FlowTester` | Class | No | @MainActor | `<Model: FlowModel, Content: View>` |
+| Type | Kind | Sendable | Actor | Generic Parameters | SPI |
+|------|------|----------|-------|--------------------|-----|
+| `FlowModel` | Protocol | -- | -- | -- | Stable |
+| `FlowAssertion` | Struct | Yes | -- | `<Model: FlowModel>` | Stable |
+| `FlowStep` | Struct | Yes | -- | `<Model: FlowModel>` | Stable |
+| `FlowStepResult` | Struct | Yes | -- | -- | Stable |
+| `FlowConfiguration` | Struct | Yes | -- | -- | Stable |
+| `FlowTester` | Class | No | @MainActor | `<Model: FlowModel, Content: View>` | Stable |
+| `SnapshotConfiguration` | Struct | Yes | -- | -- | Stable |
+| `SnapshotResult` | Struct | Yes | -- | -- | Stable |
+| `SnapshotMode` | Enum | Yes | -- | -- | Stable |
 
 ---
 
@@ -157,6 +160,9 @@ extension FlowStepResult {
 
     /// Configuration label from matrix runs; nil otherwise.
     @_spi(Experimental) public let configurationLabel: String?
+
+    /// Result of the built-in snapshot capture; nil when using the closure API.
+    public let snapshotResult: SnapshotResult?
 }
 ```
 
@@ -183,6 +189,68 @@ public struct FlowConfiguration: Sendable {
 let config = FlowConfiguration(label: "dark") { env in
     env.colorScheme = .dark
     env.locale = Locale(identifier: "ja_JP")
+}
+```
+
+---
+
+## SnapshotConfiguration
+
+```swift
+/// Configuration for the built-in snapshot engine.
+public struct SnapshotConfiguration: Sendable {
+    public let scale: CGFloat              // default: 2.0
+    public let proposedSize: ProposedSize  // default: 390×844
+    public let record: Bool                // default: checks FLOW_RECORD_SNAPSHOTS env var
+    public let snapshotDirectory: String?  // override computed __Snapshots__/ path
+
+    public struct ProposedSize: Sendable {
+        public let width: CGFloat
+        public let height: CGFloat
+        public init(width: CGFloat, height: CGFloat)
+    }
+
+    public init(
+        scale: CGFloat = 2.0,
+        proposedSize: ProposedSize = .init(width: 390, height: 844),
+        record: Bool = /* checks FLOW_RECORD_SNAPSHOTS env var */,
+        snapshotDirectory: String? = nil
+    )
+}
+```
+
+---
+
+## SnapshotResult
+
+```swift
+/// The outcome of a single snapshot capture operation.
+public struct SnapshotResult: Sendable {
+    public enum Status: Sendable {
+        case matched
+        case newReference(path: String)
+        case mismatch(referencePath: String, actualPath: String)
+        case skipped
+        case unavailable
+    }
+
+    public let status: Status
+    public let pngData: Data?
+
+    public init(status: Status, pngData: Data? = nil)
+}
+```
+
+---
+
+## SnapshotMode
+
+```swift
+/// Selects the snapshotting strategy for a flow test run.
+public enum SnapshotMode: Sendable {
+    case builtin(SnapshotConfiguration = .init())
+    case custom(@MainActor @Sendable (String, AnyView) -> Void)
+    case disabled
 }
 ```
 
@@ -266,9 +334,36 @@ public final class FlowTester<Model: FlowModel, Content: View> {
 ### Execution (Stable)
 
 ```swift
+    // Built-in snapshotting (default)
+    @discardableResult
+    public func run(
+        snapshotMode: SnapshotMode = .builtin(),
+        filePath: String = #filePath,
+        function: String = #function
+    ) -> [FlowStepResult]
+
+    // Closure-based snapshotting (advanced)
     @discardableResult
     public func run(
         snapshot: @MainActor (String, AnyView) -> Void
+    ) -> [FlowStepResult]
+
+    // Built-in async run
+    @discardableResult
+    public func asyncRun(
+        snapshotMode: SnapshotMode = .builtin(),
+        filePath: String = #filePath,
+        function: String = #function
+    ) async -> [FlowStepResult]
+
+    // Built-in matrix run
+    @discardableResult
+    public func matrixRun(
+        configurations: [FlowConfiguration],
+        modelFactory: @MainActor @Sendable () -> Model,
+        snapshotMode: SnapshotMode = .builtin(),
+        filePath: String = #filePath,
+        function: String = #function
     ) -> [FlowStepResult]
 ```
 
@@ -319,6 +414,31 @@ public final class FlowTester<Model: FlowModel, Content: View> {
 }
 ```
 
+### Snapshot Attachment Convenience (Stable)
+
+```swift
+extension [FlowStepResult] {
+    /// Passes each step's snapshot PNG data to a handler for attachment.
+    public func attachSnapshots(using handler: (Data, String) -> Void)
+}
+```
+
+**Usage with Swift Testing:**
+
+```swift
+import Testing
+import SwiftUIFlowTesting
+
+@Test @MainActor func myFlow() {
+    FlowTester(model: model) { m in MyView(model: m) }
+        .step("cart") { $0.goToCart() }
+        .run()
+        .attachSnapshots { data, name in
+            Attachment.record(data, named: name)
+        }
+}
+```
+
 ---
 
 ## File Layout
@@ -326,33 +446,61 @@ public final class FlowTester<Model: FlowModel, Content: View> {
 ```
 Sources/
   SwiftUIFlowTesting/
-    SwiftUIFlowTesting.swift   -- Module-level comment (no public API)
-    FlowModel.swift            -- FlowModel protocol
-    FlowAssertion.swift        -- FlowAssertion<Model>
-    FlowStep.swift             -- FlowStep<Model>
-    FlowStepResult.swift       -- FlowStepResult
-    FlowConfiguration.swift    -- FlowConfiguration
-    FlowTester.swift           -- FlowTester<Model, Content>
+    SwiftUIFlowTesting.swift       -- Module-level comment (no public API)
+    FlowModel.swift                -- FlowModel protocol
+    FlowAssertion.swift            -- FlowAssertion<Model>
+    FlowStep.swift                 -- FlowStep<Model>
+    FlowStepResult.swift           -- FlowStepResult
+    FlowConfiguration.swift        -- FlowConfiguration
+    FlowTester.swift               -- FlowTester<Model, Content>
+    SnapshotConfiguration.swift    -- SnapshotConfiguration
+    SnapshotResult.swift           -- SnapshotResult
+    SnapshotMode.swift             -- SnapshotMode
+    SnapshotEngine.swift           -- Internal snapshot rendering engine
+    FlowTester+Snapshots.swift     -- [FlowStepResult].attachSnapshots
 Tests/
   SwiftUIFlowTestingTests/
-    TestHelpers.swift           -- MockModel, MockView (test-only)
-    FlowStepTests.swift         -- FlowStep construction, assertions
+    TestHelpers.swift               -- MockModel, MockView (test-only)
+    FlowStepTests.swift             -- FlowStep construction, assertions
     FlowConfigurationTests.swift
-    FlowTesterTests.swift       -- Step building, run execution, results
+    FlowTesterTests.swift           -- Step building, run execution, results
+    SnapshotConfigurationTests.swift -- SnapshotConfiguration defaults, custom values
+    SnapshotEngineTests.swift       -- Render, record, match, mismatch
+    FlowTesterSnapshotTests.swift   -- Built-in snapshot integration tests
 ```
 
 ---
 
 ## Quick Reference Template
 
-Minimal copy-paste-ready flow test:
+### Built-in Snapshots (Default)
+
+```swift
+import Testing
+import SwiftUIFlowTesting
+
+@Suite @MainActor
+struct MyFlowTests {
+    @Test func myFlow() {
+        let model = MyModel()
+
+        FlowTester(model: model) { m in MyView(model: m) }
+            .step("initial") { _ in }
+            .step("after-action", action: { $0.doSomething() }, assert: { m in
+                #expect(m.state == .expected)
+            })
+            .run()  // Uses built-in ImageRenderer snapshots
+    }
+}
+```
+
+### Closure API (Advanced)
 
 ```swift
 import SwiftUI
 import Testing
 import SwiftUIFlowTesting
 // import SnapshotTesting        // only if using snapshots
-// @testable import MyApp        // only if accessing internal types
 
 @Suite @MainActor
 struct MyFlowTests {
@@ -436,7 +584,8 @@ Step names become snapshot identifiers. Use kebab-case, lowercase, descriptive o
 
 | Scenario | Imports |
 |----------|---------|
-| Flow test without snapshots | `Testing`, `SwiftUIFlowTesting` |
-| Flow test with snapshots | `Testing`, `SwiftUI`, `SnapshotTesting`, `SwiftUIFlowTesting` |
+| Flow test with built-in snapshots | `Testing`, `SwiftUIFlowTesting` |
+| Flow test without snapshots | `Testing`, `SwiftUIFlowTesting` (use `.run(snapshotMode: .disabled)`) |
+| Flow test with external snapshots | `Testing`, `SwiftUI`, `SnapshotTesting`, `SwiftUIFlowTesting` |
 | Accessing app internals | Add `@testable import MyApp` |
 | Using experimental APIs | Add `@_spi(Experimental)` to the import |

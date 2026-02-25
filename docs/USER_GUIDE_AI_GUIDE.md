@@ -11,7 +11,7 @@ Add the following to your app's `CLAUDE.md` to guide AI agents toward SwiftUIFlo
 ```markdown
 ## UI Testing
 
-- Use SwiftUIFlowTesting + SnapshotTesting for all UI flow validation
+- Use SwiftUIFlowTesting for all UI flow validation
 - Do not use XCTest/XCUITest for testing SwiftUI view behavior
 - Reserve XCUITest for a small, curated e2e suite (system-level concerns only)
 - Use Swift Testing (`@Test`, `@Suite`, `#expect`) — not XCTest assertions
@@ -22,8 +22,9 @@ Every flow test follows this shape:
 
     FlowTester(name: "flow-name", model: model) { m in MyView(model: m) }
         .step("state-name") { $0.intentMethod() }
-        .run { name, view in assertSnapshot(of: view, as: .image, named: name) }
+        .run()
 
+- `.run()` uses the built-in snapshot engine (ImageRenderer → PNG → file comparison)
 - Step names describe the resulting STATE, not the action (e.g., "payment-form" not "tap-proceed")
 - Mark test suites or functions `@MainActor`
 - Use `#require` for precondition assertions, `#expect` for soft assertions
@@ -39,14 +40,12 @@ When asking an AI agent to generate tests, provide:
 
 Example prompt:
 
-> Write a flow test for `SettingsModel`. The flow is: open settings → toggle dark mode → change language to Japanese → save. Assert screen state after each step. Use SwiftUIFlowTesting with snapshot assertions.
+> Write a flow test for `SettingsModel`. The flow is: open settings → toggle dark mode → change language to Japanese → save. Assert screen state after each step. Use SwiftUIFlowTesting.
 
 ## Example AI-Generated Test
 
 ```swift
 import Testing
-import SwiftUI
-import SnapshotTesting
 import SwiftUIFlowTesting
 @testable import MyApp
 
@@ -68,9 +67,7 @@ struct SettingsFlowTests {
         .step("saved", action: { $0.save() }, assert: { model in
             #expect(model.isSaved)
         })
-        .run { name, view in
-            assertSnapshot(of: view, as: .image, named: name)
-        }
+        .run()
     }
 }
 ```
@@ -95,8 +92,8 @@ When implementing features, fixing bugs, or adding tests:
 
 When snapshot tests fail after UI/model changes:
 
-1. Run `swift test` with recording enabled to capture new images
-2. Review diffs visually
+1. Re-record snapshots: `FLOW_RECORD_SNAPSHOTS=1 swift test`
+2. Review `.fail.png` files visually (found in `__Snapshots__/` alongside references)
 3. Commit new snapshots if changes are intentional
 4. Fix model/view if changes are unintentional
 

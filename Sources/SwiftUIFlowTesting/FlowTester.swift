@@ -290,7 +290,109 @@ public final class FlowTester<Model: FlowModel, Content: View> {
         return base
     }
 
-    // MARK: - Execution
+    // MARK: - Shared Step Execution
+
+    private func executeStep(
+        _ step: FlowStep<Model>,
+        index: Int,
+        on targetModel: Model,
+        config: FlowConfiguration,
+        configLabel: String?,
+        snapshot: @MainActor (String, AnyView) -> Void,
+        snapshotEngine: SnapshotEngine?,
+        clock: ContinuousClock
+    ) -> FlowStepResult {
+        let resolved = resolvedName(for: step.name, at: index, configLabel: configLabel)
+        let start = clock.now
+
+        beforeHook?(resolved, index, targetModel)
+
+        step.action(targetModel)
+
+        let content = viewBuilder(targetModel)
+        var env = EnvironmentValues()
+        config.environmentPatch(&env)
+        let view = AnyView(content.environment(\.self, env))
+
+        var snapshotResult: SnapshotResult?
+        if let engine = snapshotEngine {
+            snapshotResult = engine.capture(name: resolved, view: view)
+        } else {
+            snapshot(resolved, view)
+        }
+
+        for assertion in step.assertions {
+            assertion.body(targetModel)
+        }
+
+        afterHook?(resolved, index, targetModel)
+
+        let elapsed = clock.now - start
+
+        return FlowStepResult(
+            stepName: step.name,
+            resolvedName: resolved,
+            index: index,
+            duration: elapsed,
+            assertionCount: step.assertions.count,
+            configurationLabel: configLabel,
+            snapshotResult: snapshotResult
+        )
+    }
+
+    private func executeStepAsync(
+        _ step: FlowStep<Model>,
+        index: Int,
+        on targetModel: Model,
+        config: FlowConfiguration,
+        configLabel: String?,
+        snapshot: @MainActor (String, AnyView) -> Void,
+        snapshotEngine: SnapshotEngine?,
+        clock: ContinuousClock
+    ) async -> FlowStepResult {
+        let resolved = resolvedName(for: step.name, at: index, configLabel: configLabel)
+        let start = clock.now
+
+        beforeHook?(resolved, index, targetModel)
+
+        if let asyncAction = step.asyncAction {
+            await asyncAction(targetModel)
+        } else {
+            step.action(targetModel)
+        }
+
+        let content = viewBuilder(targetModel)
+        var env = EnvironmentValues()
+        config.environmentPatch(&env)
+        let view = AnyView(content.environment(\.self, env))
+
+        var snapshotResult: SnapshotResult?
+        if let engine = snapshotEngine {
+            snapshotResult = engine.capture(name: resolved, view: view)
+        } else {
+            snapshot(resolved, view)
+        }
+
+        for assertion in step.assertions {
+            assertion.body(targetModel)
+        }
+
+        afterHook?(resolved, index, targetModel)
+
+        let elapsed = clock.now - start
+
+        return FlowStepResult(
+            stepName: step.name,
+            resolvedName: resolved,
+            index: index,
+            duration: elapsed,
+            assertionCount: step.assertions.count,
+            configurationLabel: configLabel,
+            snapshotResult: snapshotResult
+        )
+    }
+
+    // MARK: - Execution (Closure API)
 
     /// Executes the flow synchronously.
     ///
@@ -311,47 +413,90 @@ public final class FlowTester<Model: FlowModel, Content: View> {
         snapshot: @MainActor (String, AnyView) -> Void
     ) -> [FlowStepResult] {
         let clock = ContinuousClock()
-        var results: [FlowStepResult] = []
-
-        for (index, step) in flowSteps.enumerated() {
-            let resolved = resolvedName(for: step.name, at: index)
-            let start = clock.now
-
-            beforeHook?(resolved, index, model)
-
-            step.action(model)
-
-            let content = viewBuilder(model)
-            var env = EnvironmentValues()
-            configuration.environmentPatch(&env)
-            let view = AnyView(content.environment(\.self, env))
-
-            snapshot(resolved, view)
-
-            for assertion in step.assertions {
-                assertion.body(model)
-            }
-
-            afterHook?(resolved, index, model)
-
-            let elapsed = clock.now - start
-
-            results.append(
-                FlowStepResult(
-                    stepName: step.name,
-                    resolvedName: resolved,
-                    index: index,
-                    duration: elapsed,
-                    assertionCount: step.assertions.count,
-                    configurationLabel: nil
-                )
+        return flowSteps.enumerated().map { index, step in
+            executeStep(
+                step,
+                index: index,
+                on: model,
+                config: configuration,
+                configLabel: nil,
+                snapshot: snapshot,
+                snapshotEngine: nil,
+                clock: clock
             )
         }
-
-        return results
     }
 
-    // MARK: - Async Execution
+    // MARK: - Execution (Built-in Snapshot API)
+
+    /// Executes the flow with built-in snapshotting.
+    ///
+    /// Uses `ImageRenderer` to capture each step's view as a PNG,
+    /// compares against reference images on disk, and returns results
+    /// with `snapshotResult` populated.
+    ///
+    /// - Parameters:
+    ///   - snapshotMode: The snapshot strategy. Defaults to `.builtin()`.
+    ///   - filePath: The test file path (captured automatically via `#filePath`).
+    ///   - function: The test function name (captured automatically via `#function`).
+    /// - Returns: An array of `FlowStepResult` describing each executed step.
+    @discardableResult
+    public func run(
+        snapshotMode: SnapshotMode = .builtin(),
+        filePath: String = #filePath,
+        function: String = #function
+    ) -> [FlowStepResult] {
+        let clock = ContinuousClock()
+
+        switch snapshotMode {
+        case .builtin(let config):
+            let engine = SnapshotEngine(
+                configuration: config,
+                filePath: filePath,
+                function: function
+            )
+            return flowSteps.enumerated().map { index, step in
+                executeStep(
+                    step,
+                    index: index,
+                    on: model,
+                    config: configuration,
+                    configLabel: nil,
+                    snapshot: { _, _ in },
+                    snapshotEngine: engine,
+                    clock: clock
+                )
+            }
+        case .custom(let closure):
+            return flowSteps.enumerated().map { index, step in
+                executeStep(
+                    step,
+                    index: index,
+                    on: model,
+                    config: configuration,
+                    configLabel: nil,
+                    snapshot: closure,
+                    snapshotEngine: nil,
+                    clock: clock
+                )
+            }
+        case .disabled:
+            return flowSteps.enumerated().map { index, step in
+                executeStep(
+                    step,
+                    index: index,
+                    on: model,
+                    config: configuration,
+                    configLabel: nil,
+                    snapshot: { _, _ in },
+                    snapshotEngine: nil,
+                    clock: clock
+                )
+            }
+        }
+    }
+
+    // MARK: - Async Execution (Closure API)
 
     /// Executes the flow with async step support.
     ///
@@ -371,48 +516,77 @@ public final class FlowTester<Model: FlowModel, Content: View> {
         var results: [FlowStepResult] = []
 
         for (index, step) in flowSteps.enumerated() {
-            let resolved = resolvedName(for: step.name, at: index)
-            let start = clock.now
-
-            beforeHook?(resolved, index, model)
-
-            if let asyncAction = step.asyncAction {
-                await asyncAction(model)
-            } else {
-                step.action(model)
-            }
-
-            let content = viewBuilder(model)
-            var env = EnvironmentValues()
-            configuration.environmentPatch(&env)
-            let view = AnyView(content.environment(\.self, env))
-
-            snapshot(resolved, view)
-
-            for assertion in step.assertions {
-                assertion.body(model)
-            }
-
-            afterHook?(resolved, index, model)
-
-            let elapsed = clock.now - start
-
-            results.append(
-                FlowStepResult(
-                    stepName: step.name,
-                    resolvedName: resolved,
-                    index: index,
-                    duration: elapsed,
-                    assertionCount: step.assertions.count,
-                    configurationLabel: nil
-                )
+            let result = await executeStepAsync(
+                step,
+                index: index,
+                on: model,
+                config: configuration,
+                configLabel: nil,
+                snapshot: snapshot,
+                snapshotEngine: nil,
+                clock: clock
             )
+            results.append(result)
         }
 
         return results
     }
 
-    // MARK: - Matrix Execution
+    // MARK: - Async Execution (Built-in Snapshot API)
+
+    /// Executes the flow asynchronously with built-in snapshotting.
+    ///
+    /// - Parameters:
+    ///   - snapshotMode: The snapshot strategy. Defaults to `.builtin()`.
+    ///   - filePath: The test file path (captured automatically via `#filePath`).
+    ///   - function: The test function name (captured automatically via `#function`).
+    /// - Returns: An array of `FlowStepResult` describing each executed step.
+    @discardableResult
+    public func asyncRun(
+        snapshotMode: SnapshotMode = .builtin(),
+        filePath: String = #filePath,
+        function: String = #function
+    ) async -> [FlowStepResult] {
+        let clock = ContinuousClock()
+        var results: [FlowStepResult] = []
+
+        let engine: SnapshotEngine?
+        let closure: (@MainActor @Sendable (String, AnyView) -> Void)?
+
+        switch snapshotMode {
+        case .builtin(let config):
+            engine = SnapshotEngine(
+                configuration: config,
+                filePath: filePath,
+                function: function
+            )
+            closure = nil
+        case .custom(let c):
+            engine = nil
+            closure = c
+        case .disabled:
+            engine = nil
+            closure = nil
+        }
+
+        for (index, step) in flowSteps.enumerated() {
+            let result = await executeStepAsync(
+                step,
+                index: index,
+                on: model,
+                config: configuration,
+                configLabel: nil,
+                snapshot: closure ?? { _, _ in },
+                snapshotEngine: engine,
+                clock: clock
+            )
+            results.append(result)
+        }
+
+        return results
+    }
+
+    // MARK: - Matrix Execution (Closure API)
 
     /// Executes the flow once per configuration with a fresh model each time.
     ///
@@ -440,42 +614,79 @@ public final class FlowTester<Model: FlowModel, Content: View> {
             let matrixModel = modelFactory()
 
             for (index, step) in flowSteps.enumerated() {
-                let resolved = resolvedName(
-                    for: step.name,
-                    at: index,
-                    configLabel: config.label
+                let result = executeStep(
+                    step,
+                    index: index,
+                    on: matrixModel,
+                    config: config,
+                    configLabel: config.label,
+                    snapshot: snapshot,
+                    snapshotEngine: nil,
+                    clock: clock
                 )
-                let start = clock.now
+                results.append(result)
+            }
+        }
 
-                beforeHook?(resolved, index, matrixModel)
+        return results
+    }
 
-                step.action(matrixModel)
+    // MARK: - Matrix Execution (Built-in Snapshot API)
 
-                let content = viewBuilder(matrixModel)
-                var env = EnvironmentValues()
-                config.environmentPatch(&env)
-                let view = AnyView(content.environment(\.self, env))
+    /// Executes the flow once per configuration with built-in snapshotting.
+    ///
+    /// - Parameters:
+    ///   - configurations: The configurations to run the flow against.
+    ///   - modelFactory: Creates a fresh model for each configuration.
+    ///   - snapshotMode: The snapshot strategy. Defaults to `.builtin()`.
+    ///   - filePath: The test file path (captured automatically via `#filePath`).
+    ///   - function: The test function name (captured automatically via `#function`).
+    /// - Returns: An array of `FlowStepResult` for all configurations.
+    @discardableResult
+    public func matrixRun(
+        configurations: [FlowConfiguration],
+        modelFactory: @MainActor @Sendable () -> Model,
+        snapshotMode: SnapshotMode = .builtin(),
+        filePath: String = #filePath,
+        function: String = #function
+    ) -> [FlowStepResult] {
+        let clock = ContinuousClock()
+        var results: [FlowStepResult] = []
 
-                snapshot(resolved, view)
+        let engine: SnapshotEngine?
+        let closure: (@MainActor @Sendable (String, AnyView) -> Void)?
 
-                for assertion in step.assertions {
-                    assertion.body(matrixModel)
-                }
+        switch snapshotMode {
+        case .builtin(let config):
+            engine = SnapshotEngine(
+                configuration: config,
+                filePath: filePath,
+                function: function
+            )
+            closure = nil
+        case .custom(let c):
+            engine = nil
+            closure = c
+        case .disabled:
+            engine = nil
+            closure = nil
+        }
 
-                afterHook?(resolved, index, matrixModel)
+        for config in configurations {
+            let matrixModel = modelFactory()
 
-                let elapsed = clock.now - start
-
-                results.append(
-                    FlowStepResult(
-                        stepName: step.name,
-                        resolvedName: resolved,
-                        index: index,
-                        duration: elapsed,
-                        assertionCount: step.assertions.count,
-                        configurationLabel: config.label
-                    )
+            for (index, step) in flowSteps.enumerated() {
+                let result = executeStep(
+                    step,
+                    index: index,
+                    on: matrixModel,
+                    config: config,
+                    configLabel: config.label,
+                    snapshot: closure ?? { _, _ in },
+                    snapshotEngine: engine,
+                    clock: clock
                 )
+                results.append(result)
             }
         }
 

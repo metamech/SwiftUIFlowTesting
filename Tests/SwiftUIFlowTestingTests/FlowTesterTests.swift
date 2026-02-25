@@ -1,6 +1,6 @@
 import SwiftUI
-import Testing
 @_spi(Experimental) @testable import SwiftUIFlowTesting
+import Testing
 
 @Suite("FlowTester")
 @MainActor
