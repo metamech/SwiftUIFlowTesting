@@ -2,11 +2,9 @@
 
 *Part of the [SwiftUIFlowTesting User's Guide](../README.md) series.*
 
-SwiftUIFlowTesting itself does not manage snapshot images — that's handled by [SnapshotTesting](https://github.com/pointfreeco/swift-snapshot-testing) in your test target. This guide covers strategies for storing those images in version control.
-
 ## How Snapshots Work
 
-SnapshotTesting stores reference images in `__Snapshots__/` folders alongside your test files:
+SwiftUIFlowTesting's built-in snapshot engine stores reference images in `__Snapshots__/` folders alongside your test files:
 
 ```
 Tests/
@@ -18,6 +16,18 @@ Tests/
         checkout-payment.png
         checkout-confirmation.png
 ```
+
+The first `swift test` run records reference images. Subsequent runs compare rendered output against these references byte-for-byte. On mismatch, a `.fail.png` is saved alongside the reference for visual inspection.
+
+## Recording New References
+
+After intentional UI changes, re-record all references:
+
+```bash
+FLOW_RECORD_SNAPSHOTS=1 swift test
+```
+
+Or per-test via `SnapshotConfiguration(record: true)`.
 
 ## Storage Strategies
 
@@ -63,13 +73,26 @@ For very large snapshot suites, consider:
 
 This trades PR reviewability for repository size control.
 
+## Custom Snapshot Directory
+
+Override the default `__Snapshots__/` location per-test:
+
+```swift
+let config = SnapshotConfiguration(
+    snapshotDirectory: "/path/to/custom/snapshots"
+)
+tester.run(snapshotMode: .builtin(config))
+```
+
+This is useful for centralizing all snapshots in one directory or separating them from test sources.
+
 ## AI Agent Interaction
 
 AI agents (Claude Code, etc.) never need to read or process snapshot images. They only interact with:
 
 - **Test code** — the `.swift` files containing `FlowTester` chains
-- **Snapshot names** — the string identifiers passed to `assertSnapshot`
-- **Failure messages** — text output indicating which snapshot didn't match
+- **Snapshot names** — the step name strings that become file names
+- **Failure messages** — `SnapshotResult.Status.mismatch` indicating which snapshot didn't match
 
 When an agent sees a snapshot failure, the correct response is to fix the model/view code, not to edit PNG files.
 
@@ -79,6 +102,7 @@ When an agent sees a snapshot failure, the correct response is to fix the model/
 - Name your `FlowTester` to get prefixed snapshots: `"checkout-cart"` instead of just `"cart"`
 - Delete obsolete snapshots when removing tests to avoid repository bloat
 - Review snapshot diffs in PRs to catch unintended visual regressions
+- Add `*.fail.png` to `.gitignore` — failure artifacts should not be committed
 
 ## Next Steps
 

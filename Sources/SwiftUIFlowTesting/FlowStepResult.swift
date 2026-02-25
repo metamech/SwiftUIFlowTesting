@@ -23,4 +23,7 @@ public struct FlowStepResult: Sendable {
     /// The configuration label when this step was part of a matrix run; `nil` otherwise.
     @_spi(Experimental)
     public let configurationLabel: String?
+
+    /// The result of the built-in snapshot capture, or `nil` when using the closure API.
+    public let snapshotResult: SnapshotResult?
 }

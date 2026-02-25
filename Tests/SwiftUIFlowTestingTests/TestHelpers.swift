@@ -1,4 +1,5 @@
 import SwiftUI
+
 @testable import SwiftUIFlowTesting
 
 /// A minimal FlowModel for testing.

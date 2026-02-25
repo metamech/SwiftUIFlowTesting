@@ -11,7 +11,7 @@ all without XCUITest or launching the app.
 - **Swift 6.2**, strict concurrency enabled
 - **SPM library** — no Xcode project, no Makefile
 - **Frameworks**: SwiftUI + Foundation only
-- **Zero external dependencies** — consuming apps bring SnapshotTesting
+- **Zero external dependencies** — consuming apps **may** bring SnapshotTesting for advanced snapshot strategies
 - **Test framework**: Swift Testing (`@Test`, `@Suite`, `#expect`) — no XCTest in this repo
 
 ## Commands
@@ -55,14 +55,16 @@ swift-format .       # apply formatting
 
 ## Workflow
 
-- **Branches**: `<type>/<slug>` (e.g., `feature/flow-tester`, `fix/sendable-conformance`)
+- **Branches**: `<type>/<issue-number>-<slug>` (e.g., `feature/32-flow-tester`, `fix/15-sendable-conformance`)
 - **Quality gates**: `swift-format .` + `swift build` + `swift test` + `swiftlint` must pass before commit
 - **Test-first**: write failing test, implement, verify green
 - **No AI attribution** in commit messages
 
 ## Documentation
 
-- `docs/API_SPEC.md` — API specification and type reference
-- `docs/CONCEPT.md` — design philosophy and rationale
-- `docs/INTEGRATION.md` — user guide for consumers using AI agents
-- `docs/SNAPSHOTS.md` — snapshot storage in git
+- `docs/API_SPEC.md` — complete type and method reference
+- `docs/USER_GUIDE_OVERVIEW.md` — motivation and design philosophy
+- `docs/USER_GUIDE_QUICK_START.md` — installation and first test
+- `docs/USER_GUIDE_AI_GUIDE.md` — AI agent integration guide
+- `docs/USER_GUIDE_GIT_SNAPSHOTS.md` — snapshot storage strategies
+- `docs/adr/` — architecture decision records

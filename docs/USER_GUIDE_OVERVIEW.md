@@ -8,7 +8,7 @@ SwiftUIFlowTesting is a Swift Package Manager library for testing multi-step Swi
 
 1. Create an `@Observable` model with intent methods (the same methods your buttons call)
 2. Build a sequence of steps that call those methods
-3. Run the flow — each step renders the view and calls your snapshot/assertion closure
+3. Run the flow — each step renders the view, captures a snapshot, and runs assertions
 
 The result is fast, parallelizable, deterministic UI flow tests that don't seize your Mac.
 
@@ -26,22 +26,24 @@ XCUITest remains valuable for a small set of true e2e tests that validate system
 
 ## Design Goals
 
-- **Zero external dependencies** — the library imports only SwiftUI and Foundation. Your test target brings [SnapshotTesting](https://github.com/pointfreeco/swift-snapshot-testing).
+- **Zero external dependencies** — the library imports only SwiftUI and Foundation. Built-in snapshotting uses `ImageRenderer` with no third-party packages required.
 - **In-process** — no app launch, no simulator automation. Tests run as regular Swift Testing tests.
 - **Model-driven** — tests call the same intent methods your views call. No gesture injection, no accessibility identifiers needed.
-- **Snapshot-agnostic** — the `run(snapshot:)` closure is yours. Wire up SnapshotTesting, write to disk, or just assert on model state.
+- **Batteries-included snapshots** — calling `.run()` automatically renders each step's view to PNG, compares against reference images, and reports mismatches.
 
-## How It Complements SnapshotTesting
+## How It Works
 
-SnapshotTesting captures a single view state. SwiftUIFlowTesting adds the flow dimension — driving a model through multiple states and capturing snapshots at each step. Together they give you visual regression testing across entire user journeys.
+SwiftUIFlowTesting drives a model through a sequence of states and captures a snapshot at each step:
 
 ```
-Model state A → Snapshot A
+Model state A → Snapshot A (PNG saved to __Snapshots__/)
      ↓ (intent method)
 Model state B → Snapshot B
      ↓ (intent method)
 Model state C → Snapshot C
 ```
+
+The first run records reference images. Subsequent runs compare against them byte-for-byte. Mismatches are saved as `.fail.png` for visual inspection.
 
 ## Next Steps
 
