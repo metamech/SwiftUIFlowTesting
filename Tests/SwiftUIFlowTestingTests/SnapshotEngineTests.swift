@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import Testing
+
 @testable import SwiftUIFlowTesting
 
 @Suite("SnapshotEngine")
@@ -138,5 +139,138 @@ struct SnapshotEngineTests {
         }
         #expect(path.contains("flow_step.png"))
         #expect(!path.contains("flow/step"))
+    }
+
+    // MARK: - Tolerance Tests
+
+    @Test func toleranceAllowsSlightDifference() {
+        let dir = makeTempDir()
+        // Record with a specific sRGB color
+        let recordConfig = SnapshotConfiguration(
+            record: true,
+            tolerance: 0.1,
+            snapshotDirectory: dir
+        )
+        let recordEngine = SnapshotEngine(
+            configuration: recordConfig,
+            filePath: #filePath,
+            function: #function
+        )
+        let baseColor = Color(.sRGB, red: 0.8, green: 0.2, blue: 0.2)
+        _ = recordEngine.capture(name: "tolerance-test", view: baseColor)
+
+        // Compare with slightly-off color using tolerance
+        let compareConfig = SnapshotConfiguration(
+            tolerance: 0.1,
+            snapshotDirectory: dir
+        )
+        let compareEngine = SnapshotEngine(
+            configuration: compareConfig,
+            filePath: #filePath,
+            function: #function
+        )
+        let nearColor = Color(.sRGB, red: 0.82, green: 0.21, blue: 0.19)
+        let result = compareEngine.capture(
+            name: "tolerance-test",
+            view: nearColor
+        )
+        guard case .matched = result.status else {
+            Issue.record("Expected matched with tolerance, got \(result.status)")
+            return
+        }
+    }
+
+    @Test func zeroToleranceRejectsSlightDifference() {
+        let dir = makeTempDir()
+        // Record with a specific sRGB color
+        let recordConfig = SnapshotConfiguration(
+            record: true,
+            snapshotDirectory: dir
+        )
+        let recordEngine = SnapshotEngine(
+            configuration: recordConfig,
+            filePath: #filePath,
+            function: #function
+        )
+        let baseColor = Color(.sRGB, red: 0.8, green: 0.2, blue: 0.2)
+        _ = recordEngine.capture(name: "zero-tol-test", view: baseColor)
+
+        // Compare with slightly-off color at zero tolerance
+        let compareConfig = SnapshotConfiguration(
+            tolerance: 0.0,
+            snapshotDirectory: dir
+        )
+        let compareEngine = SnapshotEngine(
+            configuration: compareConfig,
+            filePath: #filePath,
+            function: #function
+        )
+        let nearColor = Color(.sRGB, red: 0.82, green: 0.21, blue: 0.19)
+        let result = compareEngine.capture(
+            name: "zero-tol-test",
+            view: nearColor
+        )
+        guard case .mismatch = result.status else {
+            Issue.record("Expected mismatch at zero tolerance, got \(result.status)")
+            return
+        }
+    }
+
+    // MARK: - Diff Image Tests
+
+    @Test func mismatchWritesDiffFile() {
+        let dir = makeTempDir()
+        let config = SnapshotConfiguration(snapshotDirectory: dir)
+        let engine = SnapshotEngine(
+            configuration: config,
+            filePath: #filePath,
+            function: #function
+        )
+        _ = engine.capture(name: "diff-write", view: Text("Original"))
+        _ = engine.capture(name: "diff-write", view: Text("Changed content"))
+        let diffPath = URL(fileURLWithPath: dir)
+            .appendingPathComponent("diff-write.diff.png").path
+        #expect(FileManager.default.fileExists(atPath: diffPath))
+    }
+
+    @Test func diffResultIncludesDiffPath() {
+        let dir = makeTempDir()
+        let config = SnapshotConfiguration(snapshotDirectory: dir)
+        let engine = SnapshotEngine(
+            configuration: config,
+            filePath: #filePath,
+            function: #function
+        )
+        _ = engine.capture(name: "diff-path", view: Text("Original"))
+        let result = engine.capture(name: "diff-path", view: Text("Changed content"))
+        #expect(result.diffPath != nil)
+        #expect(result.diffPath?.contains("diff-path.diff.png") == true)
+    }
+
+    @Test func matchCleansDiffFile() {
+        let dir = makeTempDir()
+        let diffURL = URL(fileURLWithPath: dir)
+            .appendingPathComponent("clean-test.diff.png")
+        // Plant a fake diff file
+        try? FileManager.default.createDirectory(
+            at: URL(fileURLWithPath: dir),
+            withIntermediateDirectories: true
+        )
+        FileManager.default.createFile(
+            atPath: diffURL.path,
+            contents: Data([0x00])
+        )
+        #expect(FileManager.default.fileExists(atPath: diffURL.path))
+
+        let config = SnapshotConfiguration(snapshotDirectory: dir)
+        let engine = SnapshotEngine(
+            configuration: config,
+            filePath: #filePath,
+            function: #function
+        )
+        // Record reference then match
+        _ = engine.capture(name: "clean-test", view: Text("Same"))
+        _ = engine.capture(name: "clean-test", view: Text("Same"))
+        #expect(!FileManager.default.fileExists(atPath: diffURL.path))
     }
 }

@@ -1,7 +1,8 @@
 import Foundation
 import SwiftUI
-@testable import SwiftUIFlowTesting
 import Testing
+
+@testable import SwiftUIFlowTesting
 
 /// A mock model that conforms to FlowViewProvider for testing.
 @Observable

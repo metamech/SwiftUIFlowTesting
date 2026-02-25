@@ -25,13 +25,19 @@ public struct SnapshotResult: Sendable {
     /// The rendered PNG data, or `nil` if rendering was skipped or unavailable.
     public let pngData: Data?
 
+    /// Path to a diff image highlighting mismatched pixels, or `nil` if
+    /// the snapshot matched or was not compared.
+    public let diffPath: String?
+
     /// Creates a snapshot result.
     ///
     /// - Parameters:
     ///   - status: The comparison status.
     ///   - pngData: The rendered PNG data.
-    public init(status: Status, pngData: Data? = nil) {
+    ///   - diffPath: Path to the diff image on mismatch.
+    public init(status: Status, pngData: Data? = nil, diffPath: String? = nil) {
         self.status = status
         self.pngData = pngData
+        self.diffPath = diffPath
     }
 }
