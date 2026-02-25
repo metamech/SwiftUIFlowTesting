@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import SwiftUIFlowTesting
 
 @Suite("SnapshotConfiguration")
@@ -27,17 +28,24 @@ struct SnapshotConfigurationTests {
         #expect(config.snapshotDirectory == nil)
     }
 
+    @Test func defaultToleranceIsZero() {
+        let config = SnapshotConfiguration()
+        #expect(config.tolerance == 0.0)
+    }
+
     @Test func customValues() {
         let config = SnapshotConfiguration(
             scale: 3.0,
             proposedSize: .init(width: 393, height: 852),
             record: true,
+            tolerance: 0.05,
             snapshotDirectory: "/tmp/snaps"
         )
         #expect(config.scale == 3.0)
         #expect(config.proposedSize.width == 393)
         #expect(config.proposedSize.height == 852)
         #expect(config.record == true)
+        #expect(config.tolerance == 0.05)
         #expect(config.snapshotDirectory == "/tmp/snaps")
     }
 }

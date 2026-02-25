@@ -23,6 +23,11 @@ public struct SnapshotConfiguration: Sendable {
     /// Defaults to checking the `FLOW_RECORD_SNAPSHOTS` environment variable.
     public let record: Bool
 
+    /// Per-channel tolerance for pixel comparison (0.0–1.0).
+    /// A value of `0.02` means each RGBA channel may differ by ±5/255.
+    /// Defaults to `0.0` (exact match).
+    public let tolerance: Float
+
     /// An explicit directory for reference images. When `nil`, the engine
     /// computes `__Snapshots__/{TestFileName}/` relative to the test file.
     public let snapshotDirectory: String?
@@ -44,16 +49,23 @@ public struct SnapshotConfiguration: Sendable {
     ///   - scale: Rendering scale factor. Defaults to `2.0`.
     ///   - proposedSize: View size for rendering. Defaults to 390×844.
     ///   - record: Force-record mode. Defaults to checking `FLOW_RECORD_SNAPSHOTS` env var.
+    ///   - tolerance: Per-channel pixel tolerance (0.0–1.0). Defaults to `0.0`.
     ///   - snapshotDirectory: Override the computed snapshot directory. Defaults to `nil`.
     public init(
         scale: CGFloat = 2.0,
         proposedSize: ProposedSize = .init(width: 390, height: 844),
         record: Bool = ProcessInfo.processInfo.environment["FLOW_RECORD_SNAPSHOTS"] != nil,
+        tolerance: Float = 0.0,
         snapshotDirectory: String? = nil
     ) {
+        precondition(
+            (0.0...1.0).contains(tolerance),
+            "tolerance must be between 0.0 and 1.0"
+        )
         self.scale = scale
         self.proposedSize = proposedSize
         self.record = record
+        self.tolerance = tolerance
         self.snapshotDirectory = snapshotDirectory
     }
 }
