@@ -68,6 +68,8 @@ struct SnapshotEngine {
             )
             window.contentView = hostingView
             hostingView.layoutSubtreeIfNeeded()
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
+            hostingView.layoutSubtreeIfNeeded()
 
             let scale = configuration.scale
             let pixelWidth = Int(pointSize.width * scale)
