@@ -176,6 +176,98 @@ struct FlowTesterSnapshotTests {
         #expect(results[1].configurationLabel == "dark")
     }
 
+    // MARK: - Per-Step Snapshot Skip
+
+    @Test func stepWithSnapshotFalseReturnsSkipped() {
+        let model = MockModel()
+
+        let results = FlowTester(model: model) { m in MockView(model: m) }
+            .step("skipped", snapshot: false) { _ in }
+            .run(snapshotMode: .disabled)
+
+        #expect(results.count == 1)
+        guard case .skipped = results[0].snapshotResult?.status else {
+            Issue.record("Expected .skipped status")
+            return
+        }
+    }
+
+    @Test func stepWithSnapshotFalseDoesNotWriteFile() {
+        let dir = makeTempDir()
+        let model = MockModel()
+        let config = SnapshotConfiguration(record: true, snapshotDirectory: dir)
+
+        FlowTester(model: model) { m in MockView(model: m) }
+            .step("no-snap", snapshot: false) { _ in }
+            .run(snapshotMode: .builtin(config))
+
+        let filePath = URL(fileURLWithPath: dir)
+            .appendingPathComponent("no-snap.png").path
+        #expect(!FileManager.default.fileExists(atPath: filePath))
+    }
+
+    @Test func stepWithDefaultSnapshotTrueIsUnaffected() {
+        let dir = makeTempDir()
+        let model = MockModel()
+        let config = SnapshotConfiguration(record: true, snapshotDirectory: dir)
+
+        let results = FlowTester(model: model) { m in MockView(model: m) }
+            .step("captured") { _ in }
+            .run(snapshotMode: .builtin(config))
+
+        #expect(results[0].snapshotResult?.pngData != nil)
+        guard case .newReference = results[0].snapshotResult?.status else {
+            Issue.record("Expected newReference for default snapshot: true")
+            return
+        }
+    }
+
+    @Test func mixedSnapshotSkipFlow() {
+        let dir = makeTempDir()
+        let model = MockModel()
+        let config = SnapshotConfiguration(record: true, snapshotDirectory: dir)
+
+        let results = FlowTester(model: model) { m in MockView(model: m) }
+            .step("snap-0") { _ in }
+            .step("skip-1", snapshot: false) { $0.advance(to: "next") }
+            .step("snap-2") { _ in }
+            .run(snapshotMode: .builtin(config))
+
+        #expect(results.count == 3)
+        // Steps 0 and 2 have snapshots
+        #expect(results[0].snapshotResult?.pngData != nil)
+        #expect(results[2].snapshotResult?.pngData != nil)
+        // Step 1 is skipped
+        guard case .skipped = results[1].snapshotResult?.status else {
+            Issue.record("Expected .skipped for step 1")
+            return
+        }
+        #expect(results[1].snapshotResult?.pngData == nil)
+
+        // Only 2 files on disk
+        let snap0 = URL(fileURLWithPath: dir).appendingPathComponent("snap-0.png").path
+        let skip1 = URL(fileURLWithPath: dir).appendingPathComponent("skip-1.png").path
+        let snap2 = URL(fileURLWithPath: dir).appendingPathComponent("snap-2.png").path
+        #expect(FileManager.default.fileExists(atPath: snap0))
+        #expect(!FileManager.default.fileExists(atPath: skip1))
+        #expect(FileManager.default.fileExists(atPath: snap2))
+    }
+
+    @Test func attachSnapshotsSkipsSkippedResults() {
+        let model = MockModel()
+        var attachments: [(Data, String)] = []
+
+        FlowTester(model: model) { m in MockView(model: m) }
+            .step("has-snap") { _ in }
+            .step("no-snap", snapshot: false) { _ in }
+            .run(snapshotMode: .disabled)
+            .attachSnapshots { data, name in
+                attachments.append((data, name))
+            }
+
+        #expect(attachments.isEmpty)
+    }
+
     // MARK: - Snapshot Result Status
 
     @Test func snapshotResultStatusNewThenMatch() {

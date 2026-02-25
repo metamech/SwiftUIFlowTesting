@@ -42,6 +42,7 @@ let package = Package(
 | Type | Kind | Sendable | Actor | Generic Parameters | SPI |
 |------|------|----------|-------|--------------------|-----|
 | `FlowModel` | Protocol | -- | -- | -- | Stable |
+| `FlowViewProvider` | Protocol | -- | -- | `associatedtype FlowBody` | Stable |
 | `FlowAssertion` | Struct | Yes | -- | `<Model: FlowModel>` | Stable |
 | `FlowStep` | Struct | Yes | -- | `<Model: FlowModel>` | Stable |
 | `FlowStepResult` | Struct | Yes | -- | -- | Stable |
@@ -72,6 +73,39 @@ final class CheckoutModel: FlowModel {
     func proceedToPayment() { screen = .payment }
 }
 ```
+
+**Conforming existing app models:** If your model already satisfies `AnyObject & Observable` from your app target, use `@retroactive` in a test-target extension:
+
+```swift
+extension ContentViewModel: @retroactive FlowModel {}
+```
+
+---
+
+## FlowViewProvider
+
+```swift
+/// An optional protocol for models that provide a default view.
+public protocol FlowViewProvider: FlowModel {
+    associatedtype FlowBody: View
+    @MainActor var flowBody: FlowBody { get }
+}
+```
+
+When a model conforms to `FlowViewProvider`, `FlowTester` can be initialized without an explicit `@ViewBuilder` closure:
+
+```swift
+extension ContentViewModel: FlowViewProvider {
+    var flowBody: some View { ContentView(model: self) }
+}
+
+// Tests become:
+FlowTester(name: "content", model: vm)
+    .step("initial") { _ in }
+    .run()
+```
+
+The convenience initializer wraps `flowBody` in `AnyView`, so `Content` resolves to `AnyView`. The explicit `@ViewBuilder` init remains the primary path.
 
 ---
 
@@ -108,11 +142,13 @@ public struct FlowStep<Model: FlowModel>: Sendable {
     public let name: String
     public let action: @MainActor @Sendable (Model) -> Void
     public let assertions: [FlowAssertion<Model>]
+    public let snapshotEnabled: Bool
 
     public init(
         name: String,
         action: @escaping @MainActor @Sendable (Model) -> Void,
-        assertions: [FlowAssertion<Model>] = []
+        assertions: [FlowAssertion<Model>] = [],
+        snapshotEnabled: Bool = true
     )
 }
 ```
@@ -278,13 +314,28 @@ public final class FlowTester<Model: FlowModel, Content: View> {
     )
 ```
 
+### Convenience Init (FlowViewProvider)
+
+```swift
+extension FlowTester where Content == AnyView {
+    public convenience init(
+        name: String? = nil,
+        model: Model,
+        configuration: FlowConfiguration = .init()
+    ) where Model: FlowViewProvider
+}
+```
+
 ### Step Building (Stable)
+
+All step methods accept an optional `snapshot: Bool` parameter (defaults to `true`). When `false`, the step still executes its action and assertions but skips snapshot capture, returning a `.skipped` snapshot status.
 
 ```swift
     // Named steps
     @discardableResult
     public func step(
         _ name: String,
+        snapshot: Bool = true,
         action: @escaping @MainActor @Sendable (Model) -> Void = { _ in },
         assertions: [FlowAssertion<Model>] = []
     ) -> Self
@@ -292,6 +343,7 @@ public final class FlowTester<Model: FlowModel, Content: View> {
     @discardableResult
     public func step(
         _ name: String,
+        snapshot: Bool = true,
         action: @escaping @MainActor @Sendable (Model) -> Void,
         assert: @escaping @MainActor @Sendable (Model) -> Void
     ) -> Self
@@ -299,12 +351,14 @@ public final class FlowTester<Model: FlowModel, Content: View> {
     // Unnamed steps (auto-named as "step-{index}" or "{testerName}-step-{index}")
     @discardableResult
     public func step(
+        snapshot: Bool = true,
         action: @escaping @MainActor @Sendable (Model) -> Void = { _ in },
         assertions: [FlowAssertion<Model>] = []
     ) -> Self
 
     @discardableResult
     public func step(
+        snapshot: Bool = true,
         action: @escaping @MainActor @Sendable (Model) -> Void,
         assert: @escaping @MainActor @Sendable (Model) -> Void
     ) -> Self
@@ -365,6 +419,14 @@ public final class FlowTester<Model: FlowModel, Content: View> {
         filePath: String = #filePath,
         function: String = #function
     ) -> [FlowStepResult]
+
+    // Closure-based matrix run
+    @discardableResult
+    public func matrixRun(
+        configurations: [FlowConfiguration],
+        modelFactory: @MainActor @Sendable () -> Model,
+        snapshot: @MainActor (String, AnyView) -> Void
+    ) -> [FlowStepResult]
 ```
 
 > **Experimental** — The following are available under `@_spi(Experimental)`:
@@ -375,6 +437,7 @@ public final class FlowTester<Model: FlowModel, Content: View> {
     @_spi(Experimental) @discardableResult
     public func asyncStep(
         _ name: String,
+        snapshot: Bool = true,
         action: @escaping @MainActor @Sendable (Model) async -> Void,
         assertions: [FlowAssertion<Model>] = []
     ) -> Self
@@ -382,6 +445,7 @@ public final class FlowTester<Model: FlowModel, Content: View> {
     @_spi(Experimental) @discardableResult
     public func asyncStep(
         _ name: String,
+        snapshot: Bool = true,
         action: @escaping @MainActor @Sendable (Model) async -> Void,
         assert: @escaping @MainActor @Sendable (Model) -> Void
     ) -> Self
@@ -390,17 +454,6 @@ public final class FlowTester<Model: FlowModel, Content: View> {
     public func asyncRun(
         snapshot: @MainActor (String, AnyView) -> Void
     ) async -> [FlowStepResult]
-```
-
-### Matrix Runs (Experimental)
-
-```swift
-    @_spi(Experimental) @discardableResult
-    public func matrixRun(
-        configurations: [FlowConfiguration],
-        modelFactory: @MainActor @Sendable () -> Model,
-        snapshot: @MainActor (String, AnyView) -> Void
-    ) -> [FlowStepResult]
 ```
 
 ### Composition (Experimental)
@@ -448,6 +501,7 @@ Sources/
   SwiftUIFlowTesting/
     SwiftUIFlowTesting.swift       -- Module-level comment (no public API)
     FlowModel.swift                -- FlowModel protocol
+    FlowViewProvider.swift         -- FlowViewProvider protocol
     FlowAssertion.swift            -- FlowAssertion<Model>
     FlowStep.swift                 -- FlowStep<Model>
     FlowStepResult.swift           -- FlowStepResult
@@ -464,6 +518,7 @@ Tests/
     FlowStepTests.swift             -- FlowStep construction, assertions
     FlowConfigurationTests.swift
     FlowTesterTests.swift           -- Step building, run execution, results
+    FlowViewProviderTests.swift     -- FlowViewProvider convenience init
     SnapshotConfigurationTests.swift -- SnapshotConfiguration defaults, custom values
     SnapshotEngineTests.swift       -- Render, record, match, mismatch
     FlowTesterSnapshotTests.swift   -- Built-in snapshot integration tests
@@ -542,6 +597,21 @@ A bare trailing closure always resolves to the action-only overload:
     #expect(m.state == .expected)
 })
 ```
+
+> **Warning:** Putting `#expect` inside a trailing closure (action) runs it **before** snapshot capture. The execution order is: action → render → snapshot → assertions. To assert model state after render, always use the `action:` + `assert:` form:
+>
+> ```swift
+> // WRONG — #expect runs before render/snapshot:
+> .step("payment") { model in
+>     model.proceedToPayment()
+>     #expect(model.screen == .payment)
+> }
+>
+> // CORRECT — #expect runs after render + snapshot:
+> .step("payment", action: { $0.proceedToPayment() }, assert: { model in
+>     #expect(model.screen == .payment)
+> })
+> ```
 
 ### @MainActor Required on All Tests
 

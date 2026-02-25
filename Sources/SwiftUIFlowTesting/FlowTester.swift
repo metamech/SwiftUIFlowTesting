@@ -76,16 +76,20 @@ public final class FlowTester<Model: FlowModel, Content: View> {
     ///
     /// - Parameters:
     ///   - name: Identifier for the step (used in snapshot file names).
+    ///   - snapshot: Whether to capture a snapshot for this step. Defaults to `true`.
     ///   - action: Closure that mutates the model. Defaults to no-op.
     ///   - assertions: Zero or more `FlowAssertion` values.
     /// - Returns: `self` for chaining.
     @discardableResult
     public func step(
         _ name: String,
+        snapshot: Bool = true,
         action: @escaping @MainActor @Sendable (Model) -> Void = { _ in },
         assertions: [FlowAssertion<Model>] = []
     ) -> Self {
-        flowSteps.append(FlowStep(name: name, action: action, assertions: assertions))
+        flowSteps.append(
+            FlowStep(name: name, action: action, assertions: assertions, snapshotEnabled: snapshot)
+        )
         return self
     }
 
@@ -93,12 +97,14 @@ public final class FlowTester<Model: FlowModel, Content: View> {
     ///
     /// - Parameters:
     ///   - name: Identifier for the step.
+    ///   - snapshot: Whether to capture a snapshot for this step. Defaults to `true`.
     ///   - action: Closure that mutates the model.
     ///   - assert: A single assertion closure.
     /// - Returns: `self` for chaining.
     @discardableResult
     public func step(
         _ name: String,
+        snapshot: Bool = true,
         action: @escaping @MainActor @Sendable (Model) -> Void,
         assert: @escaping @MainActor @Sendable (Model) -> Void
     ) -> Self {
@@ -106,7 +112,8 @@ public final class FlowTester<Model: FlowModel, Content: View> {
             FlowStep(
                 name: name,
                 action: action,
-                assertions: [FlowAssertion(body: assert)]
+                assertions: [FlowAssertion(body: assert)],
+                snapshotEnabled: snapshot
             )
         )
         return self
@@ -120,26 +127,32 @@ public final class FlowTester<Model: FlowModel, Content: View> {
     /// or `"step-{index}"` if the tester has no name.
     ///
     /// - Parameters:
+    ///   - snapshot: Whether to capture a snapshot for this step. Defaults to `true`.
     ///   - action: Closure that mutates the model. Defaults to no-op.
     ///   - assertions: Zero or more `FlowAssertion` values.
     /// - Returns: `self` for chaining.
     @discardableResult
     public func step(
+        snapshot: Bool = true,
         action: @escaping @MainActor @Sendable (Model) -> Void = { _ in },
         assertions: [FlowAssertion<Model>] = []
     ) -> Self {
-        flowSteps.append(FlowStep(name: "", action: action, assertions: assertions))
+        flowSteps.append(
+            FlowStep(name: "", action: action, assertions: assertions, snapshotEnabled: snapshot)
+        )
         return self
     }
 
     /// Adds an unnamed step with an action and a single assertion closure.
     ///
     /// - Parameters:
+    ///   - snapshot: Whether to capture a snapshot for this step. Defaults to `true`.
     ///   - action: Closure that mutates the model.
     ///   - assert: A single assertion closure.
     /// - Returns: `self` for chaining.
     @discardableResult
     public func step(
+        snapshot: Bool = true,
         action: @escaping @MainActor @Sendable (Model) -> Void,
         assert: @escaping @MainActor @Sendable (Model) -> Void
     ) -> Self {
@@ -147,7 +160,8 @@ public final class FlowTester<Model: FlowModel, Content: View> {
             FlowStep(
                 name: "",
                 action: action,
-                assertions: [FlowAssertion(body: assert)]
+                assertions: [FlowAssertion(body: assert)],
+                snapshotEnabled: snapshot
             )
         )
         return self
@@ -162,6 +176,7 @@ public final class FlowTester<Model: FlowModel, Content: View> {
     ///
     /// - Parameters:
     ///   - name: Identifier for the step.
+    ///   - snapshot: Whether to capture a snapshot for this step. Defaults to `true`.
     ///   - action: An async closure that mutates the model.
     ///   - assertions: Zero or more `FlowAssertion` values.
     /// - Returns: `self` for chaining.
@@ -169,6 +184,7 @@ public final class FlowTester<Model: FlowModel, Content: View> {
     @discardableResult
     public func asyncStep(
         _ name: String,
+        snapshot: Bool = true,
         action: @escaping @MainActor @Sendable (Model) async -> Void,
         assertions: [FlowAssertion<Model>] = []
     ) -> Self {
@@ -177,7 +193,8 @@ public final class FlowTester<Model: FlowModel, Content: View> {
                 name: name,
                 action: { _ in },
                 asyncAction: action,
-                assertions: assertions
+                assertions: assertions,
+                snapshotEnabled: snapshot
             )
         )
         return self
@@ -187,6 +204,7 @@ public final class FlowTester<Model: FlowModel, Content: View> {
     ///
     /// - Parameters:
     ///   - name: Identifier for the step.
+    ///   - snapshot: Whether to capture a snapshot for this step. Defaults to `true`.
     ///   - action: An async closure that mutates the model.
     ///   - assert: A single assertion closure.
     /// - Returns: `self` for chaining.
@@ -194,6 +212,7 @@ public final class FlowTester<Model: FlowModel, Content: View> {
     @discardableResult
     public func asyncStep(
         _ name: String,
+        snapshot: Bool = true,
         action: @escaping @MainActor @Sendable (Model) async -> Void,
         assert: @escaping @MainActor @Sendable (Model) -> Void
     ) -> Self {
@@ -202,7 +221,8 @@ public final class FlowTester<Model: FlowModel, Content: View> {
                 name: name,
                 action: { _ in },
                 asyncAction: action,
-                assertions: [FlowAssertion(body: assert)]
+                assertions: [FlowAssertion(body: assert)],
+                snapshotEnabled: snapshot
             )
         )
         return self
@@ -315,10 +335,14 @@ public final class FlowTester<Model: FlowModel, Content: View> {
         let view = AnyView(content.environment(\.self, env))
 
         var snapshotResult: SnapshotResult?
-        if let engine = snapshotEngine {
-            snapshotResult = engine.capture(name: resolved, view: view)
+        if step.snapshotEnabled {
+            if let engine = snapshotEngine {
+                snapshotResult = engine.capture(name: resolved, view: view)
+            } else {
+                snapshot(resolved, view)
+            }
         } else {
-            snapshot(resolved, view)
+            snapshotResult = SnapshotResult(status: .skipped)
         }
 
         for assertion in step.assertions {
@@ -367,10 +391,14 @@ public final class FlowTester<Model: FlowModel, Content: View> {
         let view = AnyView(content.environment(\.self, env))
 
         var snapshotResult: SnapshotResult?
-        if let engine = snapshotEngine {
-            snapshotResult = engine.capture(name: resolved, view: view)
+        if step.snapshotEnabled {
+            if let engine = snapshotEngine {
+                snapshotResult = engine.capture(name: resolved, view: view)
+            } else {
+                snapshot(resolved, view)
+            }
         } else {
-            snapshot(resolved, view)
+            snapshotResult = SnapshotResult(status: .skipped)
         }
 
         for assertion in step.assertions {
@@ -600,7 +628,6 @@ public final class FlowTester<Model: FlowModel, Content: View> {
     ///   - modelFactory: Creates a fresh model for each configuration.
     ///   - snapshot: A closure that receives the resolved step name and view.
     /// - Returns: An array of `FlowStepResult` for all configurations.
-    @_spi(Experimental)
     @discardableResult
     public func matrixRun(
         configurations: [FlowConfiguration],
@@ -691,5 +718,29 @@ public final class FlowTester<Model: FlowModel, Content: View> {
         }
 
         return results
+    }
+}
+
+// MARK: - FlowViewProvider Convenience Init
+
+extension FlowTester where Content == AnyView {
+    /// Creates a flow tester using the model's `flowBody` as the view.
+    ///
+    /// This convenience initializer is available when the model conforms to
+    /// `FlowViewProvider`, eliminating the need for an explicit `@ViewBuilder`
+    /// closure.
+    ///
+    /// - Parameters:
+    ///   - name: An optional name for the flow.
+    ///   - model: The model instance (must conform to `FlowViewProvider`).
+    ///   - configuration: Environment and rendering configuration.
+    public convenience init(
+        name: String? = nil,
+        model: Model,
+        configuration: FlowConfiguration = .init()
+    ) where Model: FlowViewProvider {
+        self.init(name: name, model: model, configuration: configuration) { model in
+            AnyView(model.flowBody)
+        }
     }
 }

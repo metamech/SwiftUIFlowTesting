@@ -41,6 +41,18 @@ final class CheckoutModel: FlowModel {
 }
 ```
 
+## Conforming Existing App Models
+
+If your model already conforms to `Observable` (via `@Observable`) in your app target, add a one-line `@retroactive` extension in your test helpers:
+
+```swift
+// In your test target's helpers file:
+extension ContentViewModel: @retroactive FlowModel {}
+extension WizardViewModel: @retroactive FlowModel {}
+```
+
+Swift requires `@retroactive` when the inherited protocol requirements (`AnyObject`, `Observable`) are already satisfied from another module.
+
 ## Write Your First Flow Test
 
 ```swift
@@ -67,6 +79,21 @@ struct CheckoutFlowTests {
     }
 }
 ```
+
+> **Warning:** A bare trailing closure on `.step()` is always the **action**, not an assertion. Putting `#expect` inside a trailing closure runs it *before* snapshot capture (action → render → snapshot → assertions). To run assertions after render, use both `action:` and `assert:` labels:
+>
+> ```swift
+> // WRONG — assertion runs inside action (before render/snapshot):
+> .step("payment") { model in
+>     model.proceedToPayment()
+>     #expect(model.screen == .payment)  // runs before render
+> }
+>
+> // CORRECT — assertions run after render + snapshot:
+> .step("payment", action: { $0.proceedToPayment() }, assert: { model in
+>     #expect(model.screen == .payment)
+> })
+> ```
 
 Calling `.run()` with no arguments uses the built-in snapshot engine. Each step's view is rendered to PNG via `ImageRenderer` and saved to `__Snapshots__/` alongside the test file.
 
@@ -155,6 +182,59 @@ import SwiftUIFlowTesting
         }
 }
 ```
+
+## FlowViewProvider (Optional)
+
+If your model can provide a default view, conform to `FlowViewProvider` to skip the `@ViewBuilder` closure:
+
+```swift
+extension CheckoutModel: FlowViewProvider {
+    var flowBody: some View { CheckoutView(model: self) }
+}
+
+// Tests become:
+FlowTester(name: "checkout", model: model)
+    .step("cart") { _ in }
+    .step("payment") { $0.proceedToPayment() }
+    .run()
+```
+
+The explicit `@ViewBuilder` init still works when you need a different view for specific tests.
+
+## Per-Step Snapshot Skip
+
+Skip snapshot capture for individual steps (e.g., setup steps that don't need visual verification):
+
+```swift
+FlowTester(model: model) { m in MyView(model: m) }
+    .step("setup", snapshot: false) { $0.loadData() }
+    .step("main-screen") { _ in }
+    .step("cleanup", snapshot: false) { $0.reset() }
+    .run()
+```
+
+Skipped steps still execute their actions and assertions — only the snapshot capture is bypassed.
+
+## Matrix Runs
+
+Run the same flow across multiple configurations (e.g., light/dark mode, locales):
+
+```swift
+let configs = [
+    FlowConfiguration(label: "light") { _ in },
+    FlowConfiguration(label: "dark") { env in env.colorScheme = .dark },
+]
+
+FlowTester(name: "checkout", model: model) { m in CheckoutView(model: m) }
+    .step("cart") { _ in }
+    .step("payment") { $0.proceedToPayment() }
+    .matrixRun(
+        configurations: configs,
+        modelFactory: { CheckoutModel(cart: .fixture) }
+    )
+```
+
+Each configuration gets a fresh model via `modelFactory`. Snapshot names include the configuration label (e.g., `checkout-cart-dark`, `checkout-payment-light`).
 
 ## Advanced: External Snapshot Libraries
 
