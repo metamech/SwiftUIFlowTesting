@@ -16,6 +16,7 @@ public struct FlowStep<Model: FlowModel>: Sendable {
 
     /// An optional async action. When present, `asyncRun()` uses this
     /// instead of `action`.
+    @_spi(Experimental)
     public let asyncAction: (@MainActor @Sendable (Model) async -> Void)?
 
     /// Assertions to run after the action and snapshot capture.
@@ -26,12 +27,30 @@ public struct FlowStep<Model: FlowModel>: Sendable {
     /// - Parameters:
     ///   - name: Identifier for the step (used in snapshot file names).
     ///   - action: Closure that mutates the model to simulate interaction.
-    ///   - asyncAction: Optional async closure used by `asyncRun()`.
     ///   - assertions: Zero or more assertions to verify model state.
     public init(
         name: String,
         action: @escaping @MainActor @Sendable (Model) -> Void,
-        asyncAction: (@MainActor @Sendable (Model) async -> Void)? = nil,
+        assertions: [FlowAssertion<Model>] = []
+    ) {
+        self.name = name
+        self.action = action
+        self.asyncAction = nil
+        self.assertions = assertions
+    }
+
+    /// Creates a flow step with an optional async action.
+    ///
+    /// - Parameters:
+    ///   - name: Identifier for the step (used in snapshot file names).
+    ///   - action: Closure that mutates the model to simulate interaction.
+    ///   - asyncAction: Optional async closure used by `asyncRun()`.
+    ///   - assertions: Zero or more assertions to verify model state.
+    @_spi(Experimental)
+    public init(
+        name: String,
+        action: @escaping @MainActor @Sendable (Model) -> Void,
+        asyncAction: (@MainActor @Sendable (Model) async -> Void)?,
         assertions: [FlowAssertion<Model>] = []
     ) {
         self.name = name

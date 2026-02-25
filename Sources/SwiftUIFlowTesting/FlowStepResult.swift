@@ -13,11 +13,14 @@ public struct FlowStepResult: Sendable {
     public let index: Int
 
     /// The wall-clock duration of the step execution (action + snapshot + assertions).
+    @_spi(Experimental)
     public let duration: Duration
 
     /// The number of assertions executed in this step.
+    @_spi(Experimental)
     public let assertionCount: Int
 
     /// The configuration label when this step was part of a matrix run; `nil` otherwise.
+    @_spi(Experimental)
     public let configurationLabel: String?
 }

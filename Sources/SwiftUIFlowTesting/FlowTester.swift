@@ -165,6 +165,7 @@ public final class FlowTester<Model: FlowModel, Content: View> {
     ///   - action: An async closure that mutates the model.
     ///   - assertions: Zero or more `FlowAssertion` values.
     /// - Returns: `self` for chaining.
+    @_spi(Experimental)
     @discardableResult
     public func asyncStep(
         _ name: String,
@@ -189,6 +190,7 @@ public final class FlowTester<Model: FlowModel, Content: View> {
     ///   - action: An async closure that mutates the model.
     ///   - assert: A single assertion closure.
     /// - Returns: `self` for chaining.
+    @_spi(Experimental)
     @discardableResult
     public func asyncStep(
         _ name: String,
@@ -239,6 +241,7 @@ public final class FlowTester<Model: FlowModel, Content: View> {
     // MARK: - Composition
 
     /// The steps currently registered, for extraction and reuse.
+    @_spi(Experimental)
     public var extractedSteps: [FlowStep<Model>] { flowSteps }
 
     /// Appends an array of steps (e.g., extracted from another tester).
@@ -247,6 +250,7 @@ public final class FlowTester<Model: FlowModel, Content: View> {
     ///
     /// - Parameter newSteps: Steps to append.
     /// - Returns: `self` for chaining.
+    @_spi(Experimental)
     @discardableResult
     public func steps(_ newSteps: [FlowStep<Model>]) -> Self {
         flowSteps.append(contentsOf: newSteps)
@@ -358,6 +362,7 @@ public final class FlowTester<Model: FlowModel, Content: View> {
     /// - Parameter snapshot: A closure that receives the resolved step name
     ///   and rendered view.
     /// - Returns: An array of `FlowStepResult` describing each executed step.
+    @_spi(Experimental)
     @discardableResult
     public func asyncRun(
         snapshot: @MainActor (String, AnyView) -> Void
@@ -421,6 +426,7 @@ public final class FlowTester<Model: FlowModel, Content: View> {
     ///   - modelFactory: Creates a fresh model for each configuration.
     ///   - snapshot: A closure that receives the resolved step name and view.
     /// - Returns: An array of `FlowStepResult` for all configurations.
+    @_spi(Experimental)
     @discardableResult
     public func matrixRun(
         configurations: [FlowConfiguration],
