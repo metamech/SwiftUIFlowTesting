@@ -32,18 +32,17 @@ struct SnapshotEngine {
             width: configuration.proposedSize.width,
             height: configuration.proposedSize.height
         )
-        let renderer = ImageRenderer(content: framedView)
-        renderer.scale = configuration.scale
 
         #if canImport(AppKit) && !targetEnvironment(macCatalyst)
-            if let nsImage = renderer.nsImage,
-                let tiffData = nsImage.tiffRepresentation,
-                let bitmap = NSBitmapImageRep(data: tiffData)
-            {
-                return bitmap.representation(using: .png, properties: [:])
-            }
+            // Always use NSHostingView rendering on macOS. ImageRenderer
+            // produces a yellow/red prohibition-symbol placeholder for
+            // complex views (e.g. NavigationSplitView) in test bundles
+            // that lack a full app environment, and it returns a non-nil
+            // image so the fallback never triggers.
             return renderViaHostingView(view: framedView)
         #elseif canImport(UIKit)
+            let renderer = ImageRenderer(content: framedView)
+            renderer.scale = configuration.scale
             guard let uiImage = renderer.uiImage else { return nil }
             return uiImage.pngData()
         #else
