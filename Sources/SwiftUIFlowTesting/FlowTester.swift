@@ -180,7 +180,6 @@ public final class FlowTester<Model: FlowModel, Content: View> {
     ///   - action: An async closure that mutates the model.
     ///   - assertions: Zero or more `FlowAssertion` values.
     /// - Returns: `self` for chaining.
-    @_spi(Experimental)
     @discardableResult
     public func asyncStep(
         _ name: String,
@@ -208,7 +207,6 @@ public final class FlowTester<Model: FlowModel, Content: View> {
     ///   - action: An async closure that mutates the model.
     ///   - assert: A single assertion closure.
     /// - Returns: `self` for chaining.
-    @_spi(Experimental)
     @discardableResult
     public func asyncStep(
         _ name: String,
@@ -535,7 +533,6 @@ public final class FlowTester<Model: FlowModel, Content: View> {
     /// - Parameter snapshot: A closure that receives the resolved step name
     ///   and rendered view.
     /// - Returns: An array of `FlowStepResult` describing each executed step.
-    @_spi(Experimental)
     @discardableResult
     public func asyncRun(
         snapshot: @MainActor (String, AnyView) -> Void
