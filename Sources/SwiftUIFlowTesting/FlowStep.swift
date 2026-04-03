@@ -16,7 +16,6 @@ public struct FlowStep<Model: FlowModel>: Sendable {
 
     /// An optional async action. When present, `asyncRun()` uses this
     /// instead of `action`.
-    @_spi(Experimental)
     public let asyncAction: (@MainActor @Sendable (Model) async -> Void)?
 
     /// Assertions to run after the action and snapshot capture.
@@ -55,7 +54,6 @@ public struct FlowStep<Model: FlowModel>: Sendable {
     ///   - asyncAction: Optional async closure used by `asyncRun()`.
     ///   - assertions: Zero or more assertions to verify model state.
     ///   - snapshotEnabled: Whether to capture a snapshot for this step.
-    @_spi(Experimental)
     public init(
         name: String,
         action: @escaping @MainActor @Sendable (Model) -> Void,
